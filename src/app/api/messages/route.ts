@@ -61,28 +61,27 @@ export async function POST(request: NextRequest) {
         global.queryMessagesDatabase = [];
       }
       
-      // Ensure queryId is stored as string for consistent comparison
+      // Ensure queryId is stored as string for consistent comparison with STRICT isolation
       const globalMessage = {
         ...messageData,
-        queryId: queryId.toString(), // Store as string to prevent type mismatch
-        originalQueryId: queryId // Keep original for debugging
+        queryId: queryId.toString().trim(), // CRITICAL: Store as trimmed string
+        originalQueryId: queryId.toString().trim(), // Keep original for debugging
+        isolationKey: `query_${queryId}`,
+        threadIsolated: true
       };
       
       // ULTRA-STRICT duplicate check with enhanced isolation validation
       const isDuplicate = global.queryMessagesDatabase.some(existing => {
-        const existingQueryId = existing.queryId?.toString();
-        const newQueryId = globalMessage.queryId?.toString();
+        const existingQueryId = existing.queryId?.toString().trim();
+        const newQueryId = globalMessage.queryId;
 
         // Check if same query and same content with stricter validation
-        const sameQuery = existingQueryId === newQueryId;
+        const sameQuery = existingQueryId === newQueryId && existingQueryId?.length === newQueryId?.length;
         const sameMessage = existing.message === globalMessage.message;
         const sameSender = existing.sender === globalMessage.sender;
         const sameTimeWindow = Math.abs(new Date(existing.timestamp).getTime() - new Date(globalMessage.timestamp).getTime()) < 5000;
 
-        // Additional safety: check for exact length match to prevent substring issues
-        const safeLengthMatch = existingQueryId?.length === newQueryId?.length;
-
-        return sameQuery && sameMessage && sameSender && sameTimeWindow && safeLengthMatch;
+        return sameQuery && sameMessage && sameSender && sameTimeWindow;
       });
       
       if (!isDuplicate) {

@@ -139,6 +139,24 @@ export default function CreditQueriesResolved({ searchAppNo }: CreditQueriesReso
           
           if (!isForCreditTeam) return;
           
+          // Branch filtering: Check if user has assigned branches and filter accordingly
+          const userBranches = getUserBranches(user);
+          if (userBranches.length > 0) {
+            const queryBranch = query.branch || query.branchCode || query.applicationBranch;
+            const isBranchMatch = userBranches.some((userBranch: string) => 
+              queryBranch && (
+                queryBranch.toLowerCase().includes(userBranch.toLowerCase()) ||
+                userBranch.toLowerCase().includes(queryBranch.toLowerCase())
+              )
+            );
+            
+            // Skip queries that don't match user's branches
+            if (!isBranchMatch) {
+              console.log(`⏭️ Skipping query ${query.appNo} - branch ${queryBranch} doesn't match user branches:`, userBranches);
+              return;
+            }
+          }
+          
           const resolvedStatuses = ['resolved', 'approved', 'deferred', 'otc', 'waived', 'request-approved', 'request-deferral', 'request-otc'];
           
           // Check if the entire group is resolved
@@ -273,8 +291,9 @@ export default function CreditQueriesResolved({ searchAppNo }: CreditQueriesReso
       'Created At': new Date(query.createdAt).toLocaleString(),
       'Resolved At': new Date(query.resolvedAt).toLocaleString(),
       'Resolved By': query.resolvedBy || 'N/A',
+      'Approver Name': (query as any).approverName || 'N/A',
       'Resolution Time': calculateResolutionTime(query.createdAt, query.resolvedAt),
-      'Resolution Reason': query.resolutionReason || 'N/A'
+      'Remarks': query.resolutionReason || 'N/A'
     }));
 
     const headers = Object.keys(csvData[0] || {}).join(',');
@@ -572,9 +591,6 @@ export default function CreditQueriesResolved({ searchAppNo }: CreditQueriesReso
                     <span className="text-xs text-gray-600 bg-gray-100 px-3 py-2 rounded-full font-medium">
                       {new Date(query.resolvedAt).toLocaleDateString()}
                     </span>
-                    <button className="text-green-600 hover:text-green-800 text-sm font-bold">
-                      View Details →
-                    </button>
                   </div>
                 </div>
               </div>

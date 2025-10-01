@@ -308,14 +308,28 @@ export class RemarkModel {
       const { db } = await connectToDatabase();
       const collection = db.collection<RemarkQuery>(this.collectionName);
       
-      // Ensure queryId is properly formatted for isolation
-      const normalizedQueryId = queryId.toString();
+      // CRITICAL: Ensure queryId is properly formatted for isolation with trimming
+      const normalizedQueryId = queryId.toString().trim();
       
-      const query = await collection.findOne({ queryId: normalizedQueryId });
+      // ULTRA-STRICT: Exact match only
+      const query = await collection.findOne({ 
+        queryId: normalizedQueryId
+      });
+      
       const remarks = query?.remarks || [];
       
-      console.log(`🔒 Retrieved ${remarks.length} isolated remarks for query ${normalizedQueryId}`);
-      return remarks;
+      // Additional validation: Ensure all remarks belong to this query
+      const validatedRemarks = remarks.filter(remark => {
+        const remarkQueryId = remark.queryId?.toString().trim();
+        return remarkQueryId === normalizedQueryId;
+      });
+      
+      if (validatedRemarks.length !== remarks.length) {
+        console.warn(`⚠️ Filtered out ${remarks.length - validatedRemarks.length} remarks due to isolation validation`);
+      }
+      
+      console.log(`🔒 Retrieved ${validatedRemarks.length} isolated remarks for query ${normalizedQueryId}`);
+      return validatedRemarks;
     } catch (error) {
       console.error('Error getting remark remarks:', error);
       throw error;

@@ -81,8 +81,8 @@ export class ChatStorageService {
     try {
       const collection = await this.getMessagesCollection();
       
-      // Ensure queryId is stored consistently as string with validation
-      const queryIdStr = message.queryId?.toString();
+      // Ensure queryId is stored consistently as string with validation and trimming
+      const queryIdStr = message.queryId?.toString().trim();
       if (!queryIdStr) {
         console.error('Invalid queryId provided for chat message storage');
         return null;
@@ -91,7 +91,7 @@ export class ChatStorageService {
       const normalizedMessage = {
         ...message,
         queryId: queryIdStr,
-        originalQueryId: message.queryId, // Keep original for reference
+        originalQueryId: message.queryId?.toString().trim(), // Keep original for reference
         isolationKey: `query_${queryIdStr}` // Additional isolation key
       };
       
@@ -141,7 +141,7 @@ export class ChatStorageService {
       const collection = await this.getMessagesCollection();
       
       // ENHANCED STRICT: Only get messages for this specific queryId
-      const queryIdStr = queryId?.toString();
+      const queryIdStr = queryId?.toString().trim();
       if (!queryIdStr) {
         console.error('Invalid queryId provided for chat message retrieval');
         return [];
@@ -151,25 +151,18 @@ export class ChatStorageService {
       const messages = await collection
         .find({
           $and: [
+            // Layer 1: Exact string match on queryId or originalQueryId
             {
               $or: [
                 { queryId: queryIdStr },
-                { originalQueryId: queryIdStr },
-                { isolationKey: `query_${queryIdStr}` }
+                { originalQueryId: queryIdStr }
               ]
             },
-            // Additional safety check with exact regex matching to prevent cross-query contamination
+            // Layer 2: CRITICAL - Prevent substring matches by using regex with exact boundaries
             {
               $or: [
-                { queryId: { $regex: `^${queryIdStr}$`, $options: '' } }, // Exact match only
-                { originalQueryId: { $regex: `^${queryIdStr}$`, $options: '' } }
-              ]
-            },
-            // Third layer: Ensure threadIsolated flag is true
-            {
-              $or: [
-                { threadIsolated: true },
-                { threadIsolated: { $exists: false } } // Legacy messages
+                { queryId: { $regex: `^${queryIdStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$` } },
+                { originalQueryId: { $regex: `^${queryIdStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$` } }
               ]
             }
           ]
@@ -179,29 +172,27 @@ export class ChatStorageService {
 
       // FINAL ULTRA-STRICT validation: Ensure ALL returned messages belong to the correct query
       const validatedMessages = messages.filter(msg => {
-        const msgQueryId = msg.queryId?.toString();
-        const msgOriginalQueryId = msg.originalQueryId?.toString();
+        const msgQueryId = msg.queryId?.toString().trim();
+        const msgOriginalQueryId = msg.originalQueryId?.toString().trim();
 
-        // Multiple validation checks
-        const primaryMatch = msgQueryId === queryIdStr;
-        const secondaryMatch = msgOriginalQueryId === queryIdStr;
-        const lengthMatch = (msgQueryId?.length === queryIdStr.length) ||
-                           (msgOriginalQueryId?.length === queryIdStr.length);
+        // CRITICAL: Exact match with length verification
+        const primaryMatch = msgQueryId === queryIdStr && msgQueryId?.length === queryIdStr.length;
+        const secondaryMatch = msgOriginalQueryId === queryIdStr && msgOriginalQueryId?.length === queryIdStr.length;
 
-        // Final safety check
-        const isValid = (primaryMatch || secondaryMatch) && lengthMatch;
+        // Final safety check - at least one must match exactly
+        const isValid = primaryMatch || secondaryMatch;
 
         if (!isValid && (msgQueryId?.includes(queryIdStr) || msgOriginalQueryId?.includes(queryIdStr))) {
-          console.warn(`🚫 BLOCKED potential cross-query contamination: target=${queryIdStr}, msgId=${msgQueryId}, origId=${msgOriginalQueryId}`);
+          console.warn(`🚫 BLOCKED cross-query contamination in DB: target="${queryIdStr}", msgId="${msgQueryId}", origId="${msgOriginalQueryId}"`);
         }
 
         return isValid;
       });
 
-      console.log(`🔒 ChatStorage: Retrieved ${validatedMessages.length} ISOLATED messages for query ${queryId} (enhanced validation)`);
+      console.log(`🔒 ChatStorage: Retrieved ${validatedMessages.length} ISOLATED messages for query ${queryId} (ultra-strict validation)`);
       
       if (validatedMessages.length !== messages.length) {
-        console.warn(`⚠️ Filtered out ${messages.length - validatedMessages.length} messages due to isolation validation`);
+        console.warn(`⚠️ Filtered out ${messages.length - validatedMessages.length} messages due to strict isolation validation`);
       }
       
       return validatedMessages as ChatMessage[];

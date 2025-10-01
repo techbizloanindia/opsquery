@@ -46,6 +46,7 @@ export class QueryUpdateService {
           'queries.$.resolutionReason': updateData.resolutionReason,
           'queries.$.resolutionStatus': updateData.resolutionStatus,
           'queries.$.approverComment': updateData.approverComment,
+          'queries.$.approverName': updateData.approverName,
           'queries.$.isResolved': updateData.isResolved || ['approved', 'deferred', 'otc', 'waived', 'resolved'].includes(updateData.status),
           lastUpdated: new Date()
         };
@@ -89,6 +90,7 @@ export class QueryUpdateService {
             resolutionReason: updateData.resolutionReason,
             resolutionStatus: updateData.resolutionStatus,
             approverComment: updateData.approverComment,
+            approverName: updateData.approverName,
             isResolved: updateData.isResolved || ['approved', 'deferred', 'otc', 'waived', 'resolved'].includes(updateData.status),
             lastUpdated: new Date()
           };

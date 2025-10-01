@@ -53,9 +53,14 @@ async function archiveChatOnApproval(queryId: number, queryData: any, action: st
                          action === 'otc' ? 'approved' : 
                          action === 'waiver' ? 'waived' : 'resolved';
 
-    // Sync in-memory messages to database first
+    // Sync in-memory messages to database first with ULTRA-STRICT filtering
+    const queryIdStr = queryId.toString().trim();
     const inMemoryMessages = global.queryMessagesDatabase?.filter(
-      (msg: any) => msg.queryId === queryId || msg.queryId === queryId.toString()
+      (msg: any) => {
+        const msgQueryId = msg.queryId?.toString().trim();
+        // ULTRA-STRICT: Exact match with length verification
+        return msgQueryId === queryIdStr && msgQueryId.length === queryIdStr.length;
+      }
     ) || [];
 
     if (inMemoryMessages.length > 0) {
@@ -478,11 +483,11 @@ async function handleQueryAction(body: QueryAction & { type: string; status?: st
       resolvedBy: teamMember,
       resolvedByTeam: actionTeam, // Track which team resolved the query
       resolutionTeam: actionTeam, // Also track resolution team
-      resolutionReason: action, // This captures the specific action (approve/deferral/otc/waiver)
+      resolutionReason: remarks || action, // UPDATED: Use remarks as resolutionReason, fallback to action
       resolutionStatus: action, // Additional field to specifically track the resolution type
       assignedTo: assignedTo || null,
       assignedToBranch: assignedToBranch || null,
-      remarks: remarks || '',
+      remarks: remarks || '', // Keep remarks field for backward compatibility
       // Always mark as resolved when action is taken directly
       isResolved: true, // Force resolved to true for all resolution actions
       isIndividualQuery: true, // Most actions are on individual queries
@@ -495,7 +500,9 @@ async function handleQueryAction(body: QueryAction & { type: string; status?: st
         action === 'deferral' ? 'deferred' :
         action === 'otc' ? 'otc' :
         action === 'waiver' ? 'waived' : null
-      )
+      ),
+      // Add approverName for tracking who processed the action
+      approverName: actualApprover
     };
     
     console.log('📝 Sending update to QueryUpdateService:', updateData);
@@ -726,11 +733,13 @@ async function handleQueryAction(body: QueryAction & { type: string; status?: st
   }
 
   // Add a comprehensive system message to the global chat history
+  // CRITICAL: Normalize queryId to prevent cross-query contamination
+  const normalizedQueryId = queryId.toString().trim();
+  
   const systemMessage = {
     id: `${Date.now().toString()}-system-${Math.random().toString(36).substring(2, 9)}`,
-    queryId: queryId.toString(), // Use original queryId for consistent storage
-    numericQueryId: numericQueryId, // Store numeric version for reference
-    originalQueryId: queryId, // Keep original for reference
+    queryId: normalizedQueryId, // Use normalized queryId for consistent storage
+    originalQueryId: normalizedQueryId, // Keep consistent with normalization
     message: message,
     responseText: message,
     sender: approverName, // Use the actual approver name
@@ -743,11 +752,13 @@ async function handleQueryAction(body: QueryAction & { type: string; status?: st
     assignedToBranch: assignedToBranch || null,
     remarks: remarks || '',
     approvedBy: actualApprover, // Track who actually approved
-    performedBy: actorName // Track who performed the action
+    performedBy: actorName, // Track who performed the action
+    isolationKey: `query_${normalizedQueryId}`,
+    threadIsolated: true
   };
   
   global.queryMessagesDatabase.push(systemMessage);
-  console.log('💬 System message added to global message database:', systemMessage);
+  console.log(`💬 System message added to ISOLATED thread for query ${normalizedQueryId}:`, systemMessage);
 
   return NextResponse.json({
     success: true,
@@ -869,10 +880,13 @@ async function handleRevertAction(body: any) {
 ℹ️ This query has been reverted back to pending status and will need to be processed again by the appropriate team.`;
 
   // Add a system message to the global chat history
+  // CRITICAL: Normalize queryId to prevent cross-query contamination
+  const normalizedQueryId = queryId.toString().trim();
+  
   const systemMessage = {
     id: `${Date.now().toString()}-revert-${Math.random().toString(36).substring(2, 9)}`,
-    queryId: queryId.toString(), // Ensure consistent string storage
-    originalQueryId: parseInt(queryId), // Keep original for reference
+    queryId: normalizedQueryId, // Use normalized queryId for consistent storage
+    originalQueryId: normalizedQueryId, // Keep consistent with normalization
     message: revertMessage,
     responseText: revertMessage,
     sender: actionByName,
@@ -882,11 +896,13 @@ async function handleRevertAction(body: any) {
     isSystemMessage: true,
     actionType: 'revert',
     revertReason: remarks,
-    revertedBy: actionByName
+    revertedBy: actionByName,
+    isolationKey: `query_${normalizedQueryId}`,
+    threadIsolated: true
   };
   
   global.queryMessagesDatabase.push(systemMessage);
-  console.log('💬 Revert message added to global message database:', systemMessage);
+  console.log(`💬 Revert message added to ISOLATED thread for query ${normalizedQueryId}:`, systemMessage);
 
   return NextResponse.json({
     success: true,
@@ -907,16 +923,21 @@ async function handleAddMessage(body: QueryMessage & { type: string }) {
     );
   }
 
+  // CRITICAL: Normalize queryId to prevent cross-query contamination
+  const normalizedQueryId = queryId.toString().trim();
+
   const messageRecord = {
     id: `${Date.now().toString()}-${Math.random().toString(36).substring(2, 9)}`,
-    queryId: queryId.toString(), // Ensure consistent string storage
-    originalQueryId: queryId, // Keep original for reference
+    queryId: normalizedQueryId, // Store trimmed string
+    originalQueryId: normalizedQueryId, // Keep consistent
     message,
     responseText: message,
     sender: addedBy || `${team} Team Member`,
     senderRole: team ? team.toLowerCase() : 'operations',
     team: team || 'Operations',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    isolationKey: `query_${normalizedQueryId}`,
+    threadIsolated: true
   };
 
   // Add to global message database for backwards compatibility
@@ -925,7 +946,7 @@ async function handleAddMessage(body: QueryMessage & { type: string }) {
   // Store in MongoDB using ChatStorageService
   try {
     const chatMessage = {
-      queryId: queryId.toString(),
+      queryId: normalizedQueryId,
       message,
       responseText: message,
       sender: addedBy || `${team} Team Member`,
@@ -938,14 +959,14 @@ async function handleAddMessage(body: QueryMessage & { type: string }) {
 
     const stored = await ChatStorageService.storeChatMessage(chatMessage);
     if (stored) {
-      console.log(`💾 Message stored to database: ${stored._id}`);
+      console.log(`💾 Message stored to database with ISOLATED queryId ${normalizedQueryId}: ${stored._id}`);
     }
   } catch (error) {
     console.error('Error storing message to database:', error);
     // Continue with in-memory storage as fallback
   }
 
-  console.log(`💬 Message from ${team} added to global message database:`, messageRecord);
+  console.log(`💬 Message from ${team} added to ISOLATED thread for query ${normalizedQueryId}:`, messageRecord);
 
   return NextResponse.json({
     success: true,
@@ -981,26 +1002,28 @@ export async function GET(request: NextRequest) {
     } else if (type === 'messages') {
       let messages = [...global.queryMessagesDatabase];
       if (queryId) {
-        const queryIdStr = queryId.toString();
-        const queryIdNum = parseInt(queryId);
+        const queryIdStr = queryId.toString().trim();
         
-        // Enhanced filtering to handle both string and number queryId values
+        // ULTRA-STRICT filtering: Exact match only - NO partial matches or type coercion
         messages = messages.filter(m => {
-          const msgQueryId = m.queryId;
-          if (msgQueryId === null || msgQueryId === undefined) return false;
+          const msgQueryId = m.queryId?.toString().trim();
+          const msgOriginalQueryId = m.originalQueryId?.toString().trim();
           
-          // Convert message queryId to both string and number for comparison
-          const msgQueryIdStr = msgQueryId.toString();
-          const msgQueryIdNum = typeof msgQueryId === 'string' ? parseInt(msgQueryId) : msgQueryId;
+          // CRITICAL: Both value AND length must match exactly
+          const primaryMatch = msgQueryId === queryIdStr && msgQueryId?.length === queryIdStr.length;
+          const secondaryMatch = msgOriginalQueryId === queryIdStr && msgOriginalQueryId?.length === queryIdStr.length;
           
-          // Match if either string or number representation matches
-          return msgQueryIdStr === queryIdStr || 
-                 msgQueryIdNum === queryIdNum || 
-                 msgQueryId === queryIdStr || 
-                 msgQueryId === queryIdNum;
+          // At least one must match exactly
+          const isExactMatch = primaryMatch || secondaryMatch;
+          
+          if (!isExactMatch && (msgQueryId?.includes(queryIdStr) || queryIdStr?.includes(msgQueryId || ''))) {
+            console.warn(`🚫 BLOCKED cross-query leak in messages: target="${queryIdStr}", msgId="${msgQueryId}", origId="${msgOriginalQueryId}"`);
+          }
+          
+          return isExactMatch;
         });
         
-        console.log(`🔒 Filtered messages for query ${queryId}: found ${messages.length} messages`);
+        console.log(`🔒 ISOLATED messages for query ${queryId}: found ${messages.length} messages`);
       }
       
       // Sort messages by timestamp (oldest first)
@@ -1017,28 +1040,31 @@ export async function GET(request: NextRequest) {
       let messages = [...global.queryMessagesDatabase];
       
       if (queryId) {
-        const queryIdStr = queryId.toString();
+        const queryIdStr = queryId.toString().trim();
         const queryIdNum = parseInt(queryId);
         
         actions = actions.filter(a => a.queryId === queryIdNum);
         
-        // Enhanced filtering for messages to handle both string and number queryId values
+        // ULTRA-STRICT filtering: Exact match only - NO partial matches or type coercion
         messages = messages.filter(m => {
-          const msgQueryId = m.queryId;
-          if (msgQueryId === null || msgQueryId === undefined) return false;
+          const msgQueryId = m.queryId?.toString().trim();
+          const msgOriginalQueryId = m.originalQueryId?.toString().trim();
           
-          // Convert message queryId to both string and number for comparison
-          const msgQueryIdStr = msgQueryId.toString();
-          const msgQueryIdNum = typeof msgQueryId === 'string' ? parseInt(msgQueryId) : msgQueryId;
+          // CRITICAL: Both value AND length must match exactly
+          const primaryMatch = msgQueryId === queryIdStr && msgQueryId?.length === queryIdStr.length;
+          const secondaryMatch = msgOriginalQueryId === queryIdStr && msgOriginalQueryId?.length === queryIdStr.length;
           
-          // Match if either string or number representation matches
-          return msgQueryIdStr === queryIdStr || 
-                 msgQueryIdNum === queryIdNum || 
-                 msgQueryId === queryIdStr || 
-                 msgQueryId === queryIdNum;
+          // At least one must match exactly
+          const isExactMatch = primaryMatch || secondaryMatch;
+          
+          if (!isExactMatch && (msgQueryId?.includes(queryIdStr) || queryIdStr?.includes(msgQueryId || ''))) {
+            console.warn(`🚫 BLOCKED cross-query leak in combined: target="${queryIdStr}", msgId="${msgQueryId}", origId="${msgOriginalQueryId}"`);
+          }
+          
+          return isExactMatch;
         });
         
-        console.log(`🔒 Filtered combined data for query ${queryId}: ${actions.length} actions, ${messages.length} messages`);
+        console.log(`🔒 ISOLATED combined data for query ${queryId}: ${actions.length} actions, ${messages.length} messages`);
       }
       
       // Sort messages by timestamp (oldest first)

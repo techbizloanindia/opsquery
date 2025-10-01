@@ -65,21 +65,24 @@ export async function POST(request: NextRequest) {
     // Store in our database
     responsesDatabase.push(responseData);
     
-    // Create message data for chat history
+    // Create message data for chat history with proper isolation
     const messageData = {
       id: `${Date.now().toString()}-${Math.random().toString(36).substring(2, 9)}`,
-      queryId: parseInt(queryId),
+      queryId: queryId.toString().trim(), // CRITICAL: Store as string for consistent comparison
+      originalQueryId: queryId.toString().trim(),
       message: responseText,
       responseText: responseText,
       sender: respondedBy || `${team} Team Member`,
       senderRole: team.toLowerCase(),
       team: team,
-      timestamp: timestamp || new Date().toISOString()
+      timestamp: timestamp || new Date().toISOString(),
+      isolationKey: `query_${queryId}`,
+      threadIsolated: true
     };
     
     // Add to global message database for real-time chat
     global.queryMessagesDatabase.push(messageData);
-    console.log(`✅ Added message from ${team} to global message database`);
+    console.log(`✅ Added ISOLATED message for query ${queryId} from ${team} to global message database`);
     
     // Broadcast the reply to all connected clients (all dashboards)
     try {
@@ -229,23 +232,25 @@ export async function GET(request: NextRequest) {
       new Date(b.timestamp || b.respondedAt).getTime() - new Date(a.timestamp || a.respondedAt).getTime()
     );
 
-    // Get messages from global message database if requested with enhanced filtering
+    // Get messages from global message database if requested with ULTRA-STRICT filtering
     let messages = [];
     if (includeMessages && queryId) {
-      const queryIdStr = queryId.toString();
-      const queryIdNum = parseInt(queryId);
+      const queryIdStr = queryId.toString().trim();
       
       messages = global.queryMessagesDatabase.filter(m => {
         const msgQueryId = m.queryId;
         if (msgQueryId === null || msgQueryId === undefined) return false;
         
-        const msgQueryIdStr = msgQueryId.toString();
-        const msgQueryIdNum = typeof msgQueryId === 'string' ? parseInt(msgQueryId) : msgQueryId;
+        // ULTRA-STRICT: Only exact string match with length verification
+        const msgQueryIdStr = msgQueryId.toString().trim();
+        const isExactMatch = msgQueryIdStr === queryIdStr && msgQueryIdStr.length === queryIdStr.length;
         
-        return msgQueryIdStr === queryIdStr || 
-               msgQueryIdNum === queryIdNum || 
-               msgQueryId === queryIdStr || 
-               msgQueryId === queryIdNum;
+        // Log blocked attempts
+        if (!isExactMatch && msgQueryIdStr.includes(queryIdStr)) {
+          console.warn(`🚫 BLOCKED cross-query leak in query-responses: target="${queryIdStr}", msgId="${msgQueryIdStr}"`);
+        }
+        
+        return isExactMatch;
       }).sort((a, b) => 
         new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       );

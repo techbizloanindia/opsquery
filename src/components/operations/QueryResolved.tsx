@@ -430,7 +430,7 @@ export default function QueryResolved() {
         'Resolved Date': resolvedDate ? resolvedDate.toLocaleDateString() : 'N/A',
         'Resolved Time': resolvedDate ? resolvedDate.toLocaleTimeString() : 'N/A',
         'TAT (Days)': tat,
-        'Resolution Reason': query.resolutionReason || 'N/A'
+        'Remarks': query.resolutionReason || 'N/A'
       };
     });
   };
@@ -500,7 +500,7 @@ export default function QueryResolved() {
         { wch: 15 },  // Resolved Date
         { wch: 15 },  // Resolved Time
         { wch: 12 },  // TAT (Days)
-        { wch: 25 }   // Resolution Reason
+        { wch: 50 }   // Remarks
       ];
       worksheet['!cols'] = wscols;
       
@@ -621,6 +621,7 @@ export default function QueryResolved() {
                     <th className="px-4 py-3 text-left font-bold text-gray-900" style={{ color: '#111827' }}>Resolved Date</th>
                     <th className="px-4 py-3 text-left font-bold text-gray-900" style={{ color: '#111827' }}>Resolved By</th>
                     <th className="px-4 py-3 text-left font-bold text-gray-900" style={{ color: '#111827' }}>Approver Name</th>
+                    <th className="px-4 py-3 text-left font-bold text-gray-900" style={{ color: '#111827' }}>Remarks</th>
                     <th className="px-4 py-3 text-left font-bold text-gray-900" style={{ color: '#111827' }}>Actions</th>
                   </tr>
                 </thead>
@@ -703,6 +704,14 @@ export default function QueryResolved() {
                         ) : (
                           <span className="font-semibold text-gray-500" style={{ color: '#6b7280' }}>-</span>
                         )}
+                      </td>
+                      <td className="px-4 py-4">
+                        {/* Remarks Column */}
+                        <div className="max-w-xs">
+                          <p className="text-sm font-semibold text-gray-900 line-clamp-2" style={{ color: '#111827' }} title={query.resolutionReason || 'No remarks'}>
+                            {query.resolutionReason || '-'}
+                          </p>
+                        </div>
                       </td>
                       <td className="px-4 py-4">
                         <button
@@ -899,8 +908,8 @@ export default function QueryResolved() {
                       <p className="text-slate-800 font-bold">{selectedQuery.resolvedBy || 'Operations Team'}</p>
                     </div>
                     <div className="bg-white/70 rounded-xl p-4 backdrop-blur-sm">
-                      <p className="text-sm font-medium text-slate-600 mb-1">Resolution Reason</p>
-                      <p className="text-slate-800 font-bold">{selectedQuery.resolutionReason || 'Approved'}</p>
+                      <p className="text-sm font-medium text-slate-600 mb-1">Remarks</p>
+                      <p className="text-slate-800 font-bold">{selectedQuery.resolutionReason || 'No remarks provided'}</p>
                     </div>
                   </div>
                 </div>

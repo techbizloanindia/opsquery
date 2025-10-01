@@ -146,28 +146,25 @@ export async function GET(
 
       const globalMessages = global.queryMessagesDatabase
         .filter(msg => {
-          // ULTRA-STRICT: Multiple validation layers with exact string matching
-          const msgQueryId = msg.queryId?.toString();
-          const originalQueryId = msg.originalQueryId?.toString();
+          // ULTRA-STRICT: Exact string matching only - NO partial matches or type coercion
+          const msgQueryId = msg.queryId?.toString().trim();
+          const originalQueryId = msg.originalQueryId?.toString().trim();
+          const targetQueryId = queryIdStr.trim();
 
-          // Primary check: exact direct queryId match (no partial matches)
-          const primaryMatch = msgQueryId === queryIdStr;
+          // CRITICAL: Exact match ONLY - both value AND length must match
+          const primaryMatch = msgQueryId === targetQueryId && msgQueryId?.length === targetQueryId.length;
+          const secondaryMatch = originalQueryId === targetQueryId && originalQueryId?.length === targetQueryId.length;
 
-          // Secondary check: exact original queryId match (for backwards compatibility)
-          const secondaryMatch = originalQueryId === queryIdStr;
-
-          // Tertiary check: prevent any partial matches or substring issues
-          const isExactMatch = (primaryMatch || secondaryMatch) &&
-                              (msgQueryId?.length === queryIdStr.length || originalQueryId?.length === queryIdStr.length);
-
-          // Additional safety: Check for no cross-contamination from similar IDs
-          const isSafeMatch = isExactMatch &&
-                             (msgQueryId === queryIdStr || originalQueryId === queryIdStr);
+          // MUST be exact match on at least one field
+          const isSafeMatch = primaryMatch || secondaryMatch;
 
           if (isSafeMatch) {
-            console.log(`✅ ULTRA-SAFE message matched for query ${queryIdStr}: msgQueryId=${msgQueryId}, originalQueryId=${originalQueryId}`);
-          } else if (primaryMatch || secondaryMatch) {
-            console.warn(`⚠️ Blocked potential cross-query contamination: target=${queryIdStr}, msgId=${msgQueryId}, origId=${originalQueryId}`);
+            console.log(`✅ ISOLATED message matched for query ${targetQueryId}: msgQueryId=${msgQueryId}, originalQueryId=${originalQueryId}`);
+          } else {
+            // Log rejected messages for debugging
+            if (msgQueryId?.includes(targetQueryId) || targetQueryId?.includes(msgQueryId || '')) {
+              console.warn(`🚫 BLOCKED cross-query leak: target="${targetQueryId}", msgId="${msgQueryId}", origId="${originalQueryId}"`);
+            }
           }
 
           return isSafeMatch;

@@ -18,6 +18,8 @@ export default function BranchManagementTab() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingBranchId, setEditingBranchId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     code: '',
@@ -65,7 +67,10 @@ export default function BranchManagementTab() {
       newErrors.code = 'Branch code is required';
     } else if (formData.code.length < 2 || formData.code.length > 5) {
       newErrors.code = 'Branch code must be 2-5 characters';
-    } else if (branches.some(branch => branch.branchCode.toLowerCase() === formData.code.toLowerCase())) {
+    } else if (branches.some(branch => 
+      branch.branchCode.toLowerCase() === formData.code.toLowerCase() && 
+      branch._id !== editingBranchId
+    )) {
       newErrors.code = 'Branch code already exists';
     }
 
@@ -137,6 +142,8 @@ export default function BranchManagementTab() {
 
   const handleCancel = () => {
     setIsCreating(false);
+    setIsEditing(false);
+    setEditingBranchId(null);
     setFormData({
       name: '',
       code: '',
@@ -145,6 +152,58 @@ export default function BranchManagementTab() {
       isActive: true,
     });
     setErrors({});
+  };
+
+  const handleEdit = (branch: Branch) => {
+    setIsEditing(true);
+    setEditingBranchId(branch._id);
+    setFormData({
+      name: branch.branchName,
+      code: branch.branchCode,
+      city: branch.city,
+      state: branch.state,
+      isActive: branch.isActive,
+    });
+    // Scroll to top to show the form
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!validateForm() || !editingBranchId) return;
+
+    try {
+      setLoading(true);
+      const response = await fetch(`/api/branches/${editingBranchId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: formData.name.trim(),
+          code: formData.code.trim().toUpperCase(),
+          city: formData.city.trim(),
+          state: formData.state.trim(),
+          isActive: formData.isActive,
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        showNotification(`Branch "${formData.name}" updated successfully!`, 'success');
+        handleCancel();
+        fetchBranches(); // Refresh the branch list
+      } else {
+        showNotification(`Failed to update branch: ${result.error}`, 'error');
+      }
+    } catch (error) {
+      console.error('Error updating branch:', error);
+      showNotification('Failed to update branch. Please try again.', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const toggleBranchStatus = async (branchId: string, currentStatus: boolean) => {
@@ -220,7 +279,7 @@ export default function BranchManagementTab() {
           <h3 className="text-2xl font-bold text-orange-800">🏢 Branch Management</h3>
           <p className="text-orange-600 font-medium mt-1">Manage your business branches and locations</p>
         </div>
-        {!isCreating && (
+        {!isCreating && !isEditing && (
           <button
             onClick={() => setIsCreating(true)}
             className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-lg transition-colors shadow-lg font-semibold"
@@ -350,6 +409,126 @@ export default function BranchManagementTab() {
         </div>
       )}
 
+      {/* Edit Branch Form */}
+      {isEditing && (
+        <div className="bg-gradient-to-br from-white to-blue-50 p-6 rounded-lg border-2 border-blue-200 shadow-xl">
+          <h4 className="text-2xl font-bold text-blue-800 mb-2">✏️ Edit Branch</h4>
+          <p className="text-blue-600 font-medium mb-6">Update the branch information below</p>
+          <form onSubmit={handleUpdate} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-base font-bold text-blue-800 mb-2">
+                  🏷️ Branch Name *
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => handleInputChange('name', e.target.value)}
+                  className={`w-full px-4 py-3 border-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 font-medium bg-white ${
+                    errors.name ? 'border-red-500' : 'border-blue-300'
+                  }`}
+                  placeholder="Enter branch name (e.g., New Delhi Central)"
+                />
+                {errors.name && <p className="text-red-600 font-semibold text-sm mt-1">⚠️ {errors.name}</p>}
+              </div>
+
+              <div>
+                <label className="block text-base font-bold text-blue-800 mb-2">
+                  🔤 Branch Code *
+                </label>
+                <input
+                  type="text"
+                  value={formData.code}
+                  onChange={(e) => handleInputChange('code', e.target.value.toUpperCase())}
+                  className={`w-full px-4 py-3 border-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 font-medium bg-white ${
+                    errors.code ? 'border-red-500' : 'border-blue-300'
+                  }`}
+                  placeholder="Enter branch code (e.g., NDC)"
+                  maxLength={5}
+                />
+                {errors.code && <p className="text-red-600 font-semibold text-sm mt-1">⚠️ {errors.code}</p>}
+              </div>
+
+              <div>
+                <label className="block text-base font-bold text-blue-800 mb-2">
+                  🏙️ City *
+                </label>
+                <input
+                  type="text"
+                  value={formData.city}
+                  onChange={(e) => handleInputChange('city', e.target.value)}
+                  className={`w-full px-4 py-3 border-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 font-medium bg-white ${
+                    errors.city ? 'border-red-500' : 'border-blue-300'
+                  }`}
+                  placeholder="Enter city name"
+                />
+                {errors.city && <p className="text-red-600 font-semibold text-sm mt-1">⚠️ {errors.city}</p>}
+              </div>
+
+              <div>
+                <label className="block text-base font-bold text-blue-800 mb-2">
+                  🗺️ State *
+                </label>
+                <select
+                  value={formData.state}
+                  onChange={(e) => handleInputChange('state', e.target.value)}
+                  className={`w-full px-4 py-3 border-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 font-medium bg-white ${
+                    errors.state ? 'border-red-500' : 'border-blue-300'
+                  }`}
+                >
+                  <option value="" className="text-gray-500">Select State</option>
+                  {states.map(state => (
+                    <option key={state} value={state} className="text-gray-900">{state}</option>
+                  ))}
+                </select>
+                {errors.state && <p className="text-red-600 font-semibold text-sm mt-1">⚠️ {errors.state}</p>}
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-3 bg-blue-50 p-3 rounded-lg border border-blue-200">
+              <input
+                type="checkbox"
+                id="isActiveEdit"
+                checked={formData.isActive}
+                onChange={(e) => handleInputChange('isActive', e.target.checked)}
+                className="w-5 h-5 text-blue-600 border-blue-300 rounded focus:ring-blue-500"
+              />
+              <label htmlFor="isActiveEdit" className="text-base font-bold text-blue-800">
+                ✅ Active Branch (Available for assignment)
+              </label>
+            </div>
+
+            <div className="flex space-x-4 pt-6">
+              <button
+                type="submit"
+                disabled={loading}
+                className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white px-8 py-3 rounded-lg transition-all duration-200 font-bold shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Updating...
+                  </>
+                ) : (
+                  '💾 Update Branch'
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={handleCancel}
+                disabled={loading}
+                className="bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white px-8 py-3 rounded-lg transition-all duration-200 font-bold shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                ❌ Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* Branches Table */}
       <div className="bg-gradient-to-br from-white to-orange-50 rounded-lg border-2 border-orange-200 shadow-xl">
         <div className="p-6 border-b-2 border-orange-200 bg-gradient-to-r from-orange-100 to-orange-200">
@@ -418,6 +597,13 @@ export default function BranchManagementTab() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex space-x-3">
+                        <button
+                          onClick={() => handleEdit(branch)}
+                          disabled={loading}
+                          className="px-4 py-2 bg-blue-200 text-blue-800 rounded-lg text-sm font-bold hover:bg-blue-300 transition-all duration-200 shadow-md border-2 border-blue-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          ✏️ Edit
+                        </button>
                         <button
                           onClick={() => toggleBranchStatus(branch._id, branch.isActive)}
                           disabled={loading}
