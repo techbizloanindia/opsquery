@@ -2020,15 +2020,19 @@ interface ArchivedChat {
 
 ## 📄 License
 
-This project is licensed under the **MIT License**.
+This project is licensed under the **Apache License 2.0**.
 
 ### License Summary
 - ✅ **Commercial use** allowed
 - ✅ **Modification** allowed  
 - ✅ **Distribution** allowed
 - ✅ **Private use** allowed
+- ✅ **Patent use** - Grant of patent rights from contributors
 - ❌ **Liability** - No warranty provided
 - ❌ **Warranty** - Software provided "as is"
+- ⚠️ **Trademark use** - Does not grant rights to use trademarks
+
+For full license text, see the [LICENSE](LICENSE) file.
 
 ---
 
