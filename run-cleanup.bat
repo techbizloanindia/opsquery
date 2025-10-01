@@ -1,6 +1,0 @@
-@echo off
-echo Running database cleanup script...
-node clean-store-chat-and-reports.js
-echo.
-echo Press any key to exit...
-pause > nul

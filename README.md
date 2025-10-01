@@ -6,7 +6,7 @@
 ![TailwindCSS](https://img.shields.io/badge/TailwindCSS-4.0-38B2AC.svg)
 ![MongoDB](https://img.shields.io/badge/MongoDB-6.17-green.svg)
 ![React](https://img.shields.io/badge/React-19.0-blue.svg)
-![MIT License](https://img.shields.io/badge/License-MIT-green.svg)
+![Apache License 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 
 **OpsQuery** is an advanced real-time query management system designed for financial institutions to streamline communication and workflow between Operations, Sales, and Credit teams. The system provides role-based dashboards, real-time messaging, query tracking, comprehensive audit trails, and advanced analytics.
 
@@ -337,10 +337,48 @@ OperationQuery/
 └── 📄 Documentation
     ├── README.md                     # This file
     ├── OpsQuery-FlowChart.md         # Detailed flowchart
-    └── LICENSE                       # MIT License
+    └── LICENSE                       # Apache License 2.0
 ```
 
 ## 🚀 Features
+
+### **🌟 Real-Time Features (Latest Updates)**
+
+#### **Live Dashboard Statistics**
+- **Real-time Counter Updates**: All dashboard statistics update instantly via Server-Sent Events (SSE)
+  - 📝 **QUERIES RAISED** - Updates when new queries are created
+  - ⏳ **PENDING QUERIES** - Decrements when queries are resolved
+  - ✅ **RESOLVED QUERIES** - Increments when queries are approved/deferred/OTC/waived
+  - 🚨 **SANCTIONED CASES** - Auto-decrements when applications are removed
+- **Live Indicators**: Green pulsing "Live" badges on all statistics cards
+- **Connection Status**: Real-time connection monitoring with 🔴 LIVE indicator
+- **Update Mechanism**: 
+  - Primary: SSE updates (< 1 second latency)
+  - Fallback: Auto-refresh every 35 seconds
+  - Manual: Refresh button available
+
+#### **Automatic Sanctioned Case Removal** ⚡
+- **Smart Auto-Deletion**: Applications automatically removed from Sanctioned Cases when ALL queries are resolved
+- **Multi-Team Support**: Works seamlessly when queries are resolved by:
+  - Operations team (using approval buttons)
+  - Sales team (using Approve/Defer/OTC/Waiver actions)
+  - Credit team (using Approve/Defer/OTC/Waiver actions)
+- **Individual Query Tracking**: Checks each sub-query status independently
+- **Dual Database Cleanup**:
+  1. Updates `applications` collection status to `QUERY_RESOLVED`
+  2. Deletes from `sanctioned_applications` collection
+- **Real-time UI Update**: Sanctioned Cases section updates instantly without manual refresh
+- **Comprehensive Logging**: Detailed console logs for debugging and audit trail
+
+#### **Enhanced Query Statistics**
+- **Individual Query Counting**: Statistics now count individual sub-queries, not just query groups
+- **Accurate Pending Count**: Shows only truly pending queries (excludes resolved sub-queries)
+- **Resolved Query Tracking**: Counts queries resolved through all action types:
+  - ✅ Approved
+  - 🏢 OTC (One Time Consideration)
+  - ⏸️ Deferred
+  - 📋 Waived
+  - ✔️ Resolved
 
 ### **Core Features**
 
@@ -390,6 +428,89 @@ OperationQuery/
 - **Render** - Cloud hosting platform
 - **Git** - Version control
 - **npm** - Package management
+
+## 🏗️ Real-Time Architecture
+
+### **Server-Sent Events (SSE) Implementation**
+
+The system uses Server-Sent Events for real-time updates with a 3-layer fallback mechanism:
+
+```typescript
+// Real-time Update Flow
+1. SSE Connection (< 1 second latency)
+   └─> /api/queries/events endpoint
+   └─> Broadcasts: created, updated, resolved, sanctioned_case_removed
+
+2. Polling Fallback (25-35 seconds)
+   └─> Auto-refresh when SSE unavailable
+   └─> Ensures data consistency
+
+3. Manual Refresh
+   └─> User-triggered refresh button
+   └─> Full data reload
+```
+
+### **Auto-Deletion Workflow**
+
+```mermaid
+graph TD
+    A[Query Resolution Action] --> B{Check Query Type}
+    B -->|Individual Query| C[Update Sub-Query Status]
+    B -->|Query Group| D[Update Group Status]
+    
+    C --> E[Trigger checkAndDeleteFromSanctionedCases]
+    D --> E
+    
+    E --> F[Fetch All Queries for Application]
+    F --> G{Check All Sub-Queries}
+    
+    G -->|Has Sub-Queries| H[Verify Each Sub-Query Status]
+    G -->|No Sub-Queries| I[Verify Group Status]
+    
+    H --> J{All Resolved?}
+    I --> J
+    
+    J -->|Yes| K[Delete from sanctioned_applications DB]
+    J -->|No| L[Keep in Sanctioned Cases]
+    
+    K --> M[Update applications Collection Status]
+    M --> N[Broadcast sanctioned_case_removed Event]
+    N --> O[Real-time UI Update]
+    
+    L --> P[Log: Still has pending queries]
+```
+
+### **Query Statistics Calculation**
+
+```typescript
+// Enhanced statistics counting individual sub-queries
+Statistics Calculation:
+├── QUERIES RAISED: Count of all individual sub-queries
+├── PENDING QUERIES: Sub-queries with status = 'pending'
+├── RESOLVED QUERIES: Sub-queries with status in ['approved', 'deferred', 'otc', 'waived', 'resolved']
+└── SANCTIONED CASES: Unique applications with unresolved queries
+
+// Old Logic (Incorrect)
+- Counted only query groups (not individual queries)
+- Main group status checked before sub-queries
+
+// New Logic (Correct)  
+- Counts individual sub-queries in queries array
+- Prioritizes sub-query status over group status
+- Accurate pending/resolved counts
+```
+
+### **Key Technical Files**
+
+| File | Purpose | Key Functions |
+|------|---------|---------------|
+| `src/app/api/queries/route.ts` | Main queries API | Statistics calculation, SSE broadcasting |
+| `src/app/api/query-actions/route.ts` | Query actions handler | Auto-deletion trigger, status updates |
+| `src/lib/queryUpdateService.ts` | Client-side SSE service | Real-time event subscription |
+| `src/lib/eventStreamUtils.ts` | SSE utility | Event broadcasting to all clients |
+| `src/lib/models/SanctionedApplication.ts` | Database model | CRUD operations for sanctioned cases |
+| `src/components/operations/DashboardOverview.tsx` | Dashboard UI | Real-time statistics display |
+| `src/components/operations/SanctionedCases.tsx` | Sanctioned cases UI | Real-time case list updates |
 
 ## 🔧 Installation & Setup
 
@@ -453,6 +574,16 @@ node start-server.js
 
 ## 📊 API Documentation
 
+### Real-Time Update Endpoints
+- `GET /api/queries/events` - Server-Sent Events stream for real-time updates
+- `GET /api/queries?stats=true` - Get query statistics (counts individual sub-queries)
+- `POST /api/query-actions` - Execute query actions (triggers auto-deletion check)
+
+### Sanctioned Cases Management
+- `GET /api/get-sanctioned` - Get all sanctioned applications
+- `DELETE /api/cleanup-sanctioned` - Bulk cleanup of resolved sanctioned cases
+- `POST /api/query-actions` - Auto-removes from sanctioned cases when all queries resolved
+
 ### Authentication Endpoints
 - `POST /api/auth/login` - User authentication
 - `POST /api/auth/logout` - User logout
@@ -484,7 +615,7 @@ node start-server.js
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ## 🆘 Support
 
@@ -495,8 +626,21 @@ For support and questions:
 
 ## 🔄 Version History
 
-- **v2.0.0** - Major release with enhanced UI and real-time features
-- **v1.x.x** - Initial releases with basic functionality
+### **v2.1.0** (October 2025) - Real-Time Updates & Auto-Deletion
+- ✨ **NEW**: Real-time dashboard statistics with SSE
+- ✨ **NEW**: Live indicators with green pulsing badges
+- ✨ **NEW**: Automatic sanctioned case removal on query resolution
+- 🔧 **FIXED**: Query statistics now count individual sub-queries
+- 🔧 **FIXED**: Pending queries calculation accuracy
+- 🔧 **FIXED**: Auto-deletion triggered by Sales/Credit team actions
+- 📊 **IMPROVED**: Enhanced connection status monitoring
+- 📊 **IMPROVED**: Incremental statistics updates (no full refetch)
+- 🎨 **UI**: Enhanced "Live" indicators with animations
+- 🎨 **UI**: Better visual feedback for real-time updates
+
+### **v2.0.0** - Major release with enhanced UI and real-time features
+
+### **v1.x.x** - Initial releases with basic functionality
 
 ---
 
