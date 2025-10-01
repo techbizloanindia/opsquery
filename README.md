@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # OpsQuery - Real-time Query Management System
 
 ![OpsQuery](https://img.shields.io/badge/OpsQuery-v2.0-blue.svg)
